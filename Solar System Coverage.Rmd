@@ -1,0 +1,442 @@
+---
+title: "Prediction of Solar System Coverage"
+author: "Sarvesh Naik"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Task: Predict solar power system coverage
+
+We implement at least 3 different supervised learning methods to predict if a tile
+has high (high) solar power system coverage or not, on the basis of the input
+features. 
+
+We also employ an appropriate framework to compare and tune the different
+methods considered, evaluating and discussing their relative merits.
+
+
+Load data and check for missing values
+```{r}
+load('data_hw3_deepsolar.RData')
+str(data)
+any(is.na(data))
+
+```
+There are 10926 observations and 15 variables in dataset. All the variables in the dataset are numeric. The
+target variable is solar_system_coverage and we will consider all variables except solar_system_coverage
+as predictor variables. 
+
+There are no missing values in the data.
+
+
+Model 1- Logistic regression model
+
+```{r}
+#Fit the LR model
+fit1 <- glm(solar_system_coverage ~ ., data = data, family = "binomial")
+summary(fit1)
+
+```
+In this case, the model's deviance and residual deviance are 7092.3 and 4284.0, respectively. The difference between these two values indicates that the model is explaining a significant portion of the variance in the data. The AIC value of 4314 is relatively low, indicating a good fit of the model.
+
+The coefficients of the model provide information about the contribution of each variable to the outcome variable (solar_system_coverage). The intercept term is significantly different from zero, indicating that there is a significant baseline effect that is not explained by the other variables. Most of the predictor variables are statistically significant at a 5% level of significance, indicating that they are good predictors of the outcome variable.
+
+Overall, the model seems to have a good fit to the data and the predictors have significant effects on the outcome variable.
+
+Sensitivity-Specificity plot to determine the optimal threshold
+```{r}
+library(ROCR)
+pred_obj <- prediction(fitted(fit1), data$solar_system_coverage)
+
+#Compute sensitivity and specificity values for different thresholds
+
+sens <- performance(pred_obj, "sens")
+spec <- performance(pred_obj, "spec")
+
+#Plot sensitivity vs specificity
+
+tau <- sens@x.values[[1]]
+
+sens_spec <- sens@y.values[[1]] + spec@y.values[[1]]
+best_roc <- which.max(sens_spec)
+plot(tau, sens_spec, type = "l",
+xlab = "Threshold",
+ylab = "Sensitivity + Specificity",
+main = "Sensitivity-Specificity Plot")
+points(tau[best_roc], sens_spec[best_roc], pch = 19, col = adjustcolor("blue", 0.5))
+cat("Optimal threshold according to the Sensitivity-Specificity plot:", tau[best_roc], "\n\n")
+pred <- ifelse(fitted(fit1) > tau[best_roc], 'high', 'low')
+table(data$solar_system_coverage, pred)
+acc <- performance(pred_obj, "acc")
+cat(" \nAccuracy for optimal threshold according to Sensitivity-Specificity plot:", acc@y.values[[1]][best_roc], "\n")
+
+```
+Based on the Sensitivity-Specificity plot, the optimal threshold for this logistic regression model is 0.8896407. This threshold is chosen to maximize the model's sensitivity and specificity simultaneously.
+
+Using this threshold, the confusion matrix shows that the model correctly predicted 218 true positives and 1300 true negatives, while incorrectly predicting 872 false negatives and 8536 false positives.
+
+The overall accuracy for this threshold is 0.8611569, which indicates that the model's predictions are correct 86.12% of the time. It's important to note that accuracy alone may not always be the best metric for evaluating a model's performance.
+
+
+Precision-Recall curve to evaluate the model's performance
+```{r}
+
+pr <- performance(pred_obj, "prec", "rec")
+
+#Plot precision vs recall
+
+plot(pr,
+main = "Precision-Recall Curve",
+xlab = "Recall",
+ylab = "Precision")
+aucpr <- performance(pred_obj, "aucpr")
+print(paste("Area under the Precision-Recall curve:", aucpr@y.values))
+
+```
+In this case, the AUPRC score is 0.985330729700362, which is close to 1. This suggests that the model has good performance in terms of predicting the positive class.
+
+F1 Score plot to determine the optimal threshold
+
+```{r}
+perf_f <- performance(pred_obj, "f")
+
+#Plot F1-Score vs threshold
+
+tau <- perf_f@x.values[[1]]
+f <- perf_f@y.values[[1]]
+best_pr <- which.max(f)
+plot(tau, f, type = "l",
+xlab = "Threshold",
+ylab = "F1-Score",
+main = "F1-Score Plot")
+points(tau[best_pr], f[best_pr], pch = 19, col = adjustcolor("blue", 0.5))
+cat("Optimal threshold according to the F1-Score plot:", tau[best_pr], "\n")
+pred_t <- ifelse(fitted(fit1) > tau[best_pr], 'high', 'low')
+table(data$solar_system_coverage, pred_t)
+acc <- performance(pred_obj, "acc")
+cat("\nAccuracy for optimal threshold according to F1-Score plot:", acc@y.values[[1]][best_pr], "\n")
+cat("\nF1-Score for optimal threshold according to F1-Score plot:", f[best_pr])
+
+```
+The F1-score is a commonly used metric that balances the tradeoff between precision and recall in binary classification problems. The optimal threshold according to the F1-Score plot is 0.5156498, which means that if the predicted probability of solar system coverage is above this threshold, the observation is classified as "high" solar system coverage, otherwise it is classified as "low".
+
+The confusion matrix shows that the model predicted 596 true positives, 194 true negatives, 9642 false negatives, and 494 false positives. The accuracy for this threshold is 0.9277869, which means that the model correctly classified 92.78% of the observations.
+
+The F1-score for this threshold is 0.9606974, which indicates that the model has a good balance between precision and recall. This means that the model can correctly identify the positive class (high solar system coverage) with high precision and recall, while also avoiding false positives.
+
+
+
+MODEL 2 - Random Forest
+
+```{r}
+
+# Split data into training and testing sets
+library(caTools)
+set.seed(123)
+split <- sample.split(data$solar_system_coverage, SplitRatio = 0.7)
+train <- subset(data, split == TRUE)
+test <- subset(data, split == FALSE)
+
+```
+
+Fit the Random Forest model
+```{r}
+library(caret)
+library(randomForest)
+fit2 <- randomForest(solar_system_coverage ~ ., data = train)
+
+```
+
+Evaluate the model's performance on the test set
+
+```{r}
+
+# Calculate the confusion matrix
+library(caret)
+pred <- predict(fit2, newdata = test, type = "class")
+confusionMatrix(table(pred, test$solar_system_coverage))
+
+# Feature importance plot
+varImpPlot(fit2, sort = TRUE, main = "Variable Importance")
+
+# Calculate accuracy, sensitivity, specificity, and F1-score
+library(ROCR)
+pred_obj <- prediction(as.numeric(pred), test$solar_system_coverage)
+acc <- performance(pred_obj, "acc")
+sens <- performance(pred_obj, "sens")
+spec <- performance(pred_obj, "spec")
+f1 <- performance(pred_obj, "f")
+cat("Accuracy:", round(acc@y.values[[1]], 4), "\n")
+cat("Sensitivity:", round(sens@y.values[[1]], 4), "\n")
+cat("Specificity:", round(spec@y.values[[1]], 4), "\n")
+cat("F1-score:", round(f1@y.values[[1]][which.max(f1@x.values[[1]])], 4), "\n")
+
+library(pROC)
+roc_obj <- roc(test$solar_system_coverage, predict(fit2, newdata = test, type = "prob")[,2])
+auc <- auc(roc_obj)
+
+cat("Area Under Curve-",auc)
+
+
+
+
+```
+Based on the evaluation metrics, the random forest model performs very well on the test set, with an accuracy of 0.9866. The confusion matrix shows that the model has a high level of true positives (289 out of 294), with only 5 false negatives. The feature importance plot indicates that the "solar_panel_area" variable is the most important feature for predicting the target variable.
+
+Sensitivity and Specificity values indicate that the model has a high true negative rate and a low true positive rate. The low Sensitivity is likely due to the imbalanced nature of the dataset, with only 10% of observations belonging to the "high" class.
+
+Overall, the model has a high accuracy, but the low Sensitivity suggests that it may not perform well in situations where correctly identifying "high" observations is particularly important.
+
+The plot shows the features on the x-axis and their respective importance scores on the y-axis. The bars in the plot represent the importance of each feature, where the longer the bar, the more important the feature. 
+Here we can see that the daily_solar_radiation and housing_unit_median_value are the two most important features.
+
+
+
+MODEL 3 - SVM
+
+```{R}
+
+library(kernlab)
+
+# Split data into training and testing sets
+set.seed(123)
+train_idx <- sample(nrow(data), 0.7 * nrow(data))
+train <- data[train_idx, ]
+test <- data[-train_idx, ]
+
+# Fit SVM models with different kernels and parameters
+svm_poly_3 <- ksvm(as.matrix(train[, 2:15]), train$solar_system_coverage, type = "C-svc",
+                   kernel = "polydot", kpar = list(degree = 3))
+svm_sigmoid <- ksvm(as.matrix(train[, 2:15]), train$solar_system_coverage, type = "C-svc",
+                     kernel = "tanhdot", kpar = list(scale = 0.5))
+
+# Make predictions on test data
+pred_svm_poly_3 <- predict(svm_poly_3, as.matrix(test[, 2:15]))
+pred_svm_sigmoid <- predict(svm_sigmoid, as.matrix(test[, 2:15]))
+
+
+
+```
+
+```{r}
+# Plot confusion matrix for SVM with polynomial kernel of degree 3
+tab_svm_poly_3 <- table(test$solar_system_coverage, pred_svm_poly_3)
+conf_mat_svm_poly_3 <- caret::confusionMatrix(tab_svm_poly_3)
+conf_mat_svm_poly_3$table
+
+# Plot confusion matrix for SVM with sigmoid kernel and scale = 0.5
+tab_svm_sigmoid <- table(test$solar_system_coverage, pred_svm_sigmoid)
+conf_mat_svm_sigmoid <- caret::confusionMatrix(tab_svm_sigmoid)
+conf_mat_svm_sigmoid$table
+
+# Calculate performance metrics for SVM with polynomial kernel of degree 3
+svm_poly_3_metrics <- caret::confusionMatrix(data = pred_svm_poly_3, reference = test$solar_system_coverage, positive = "low")
+svm_poly_3_metrics$overall
+
+# Calculate performance metrics for SVM with sigmoid kernel and scale = 0.5
+svm_sigmoid_metrics <- caret::confusionMatrix(data = pred_svm_sigmoid, reference = test$solar_system_coverage, positive = "low")
+
+
+# Print other performance metrics
+# Print other performance metrics
+cat("\nPerformance metrics for SVM with polynomial kernel of degree 3:\n")
+svm_poly_3_metrics$byClass
+cat("\nPerformance metrics for SVM with sigmoid kernel and scale = 0.5:\n")
+svm_sigmoid_metrics$byClass
+
+```
+Based on the confusion matrix and performance metrics, the SVM model with polynomial kernel of degree 3 performs much better than the one with sigmoid kernel and scale = 0.5. The confusion matrix shows that the polynomial kernel model has higher true positive and true negative rates, while the sigmoid kernel model misclassifies a lot of low coverage instances as high coverage.
+
+In terms of performance metrics, the polynomial kernel model has a much higher sensitivity (0.971) and specificity (0.643), as well as a higher precision (0.961) and F1 score (0.966). The balanced accuracy of the polynomial kernel model is also much higher than the sigmoid kernel model (0.808 vs 0.503).
+
+Overall, the SVM model with polynomial kernel of degree 3 performed better than the SVM model with sigmoid kernel and scale = 0.5.
+
+Model 4- Classification Trees
+
+```{r}
+
+# load the packages
+library(rpart)
+library(partykit)
+library(ROCR)
+library(ISLR)
+library(rpart.plot)
+
+# Classification tree model
+c_tree <- rpart(solar_system_coverage ~ ., data = data, cp = 0.01/2, minsplit = 2)
+# Summary of classification tree model 1
+summary(c_tree)
+
+```
+
+```{r}
+
+#Best cp value to use
+best <- c_tree$cptable[which.min(c_tree$cptable[,"xerror"]),"CP"]
+#produce a pruned tree based on the best cp value
+pruned_tree <- prune(c_tree, cp=best)
+#plot the pruned tree
+prp(pruned_tree,extra=1)
+
+
+```
+
+```{r}
+
+# Prediction using classification tree model 1
+phat <- predict(c_tree)
+# predicted classes can be obtained in a similar way by using the argument "type"
+class_c_tree <- predict(c_tree, type = "class")
+tab_ct1 <- table(data$solar_system_coverage, class_c_tree)
+tab_ct1
+
+
+# Accuracy of tuned model
+acc_ct <- sum(diag(tab_ct1))/ sum(tab_ct1)
+cat("\n Accuracy of the Classification Tree Model is - ",acc_ct)
+
+
+```
+
+```{r}
+
+# ROC curve
+# phat[,2] contains probability of class "high"
+pred_obj_ct <- prediction(phat[,2], data$solar_system_coverage)
+roc_ct <- performance(pred_obj_ct, "tpr", "fpr")
+plot(roc_ct)
+abline(0,1, col = "blue", lty = 2)
+
+# compute the area under the ROC curve
+auc_ct <- performance(pred_obj_ct, "auc")
+auc_ct@y.values
+
+# Sensitivity and Specificity
+TN <- tab_ct1[1,1]
+FP <- tab_ct1[1,2]
+FN <- tab_ct1[2,1]
+TP <- tab_ct1[2,2]
+
+Sensitivity_ct <- TP/(TP+FN)
+Specificity_ct <- TN/(TN+FP)
+
+cat("\n Sensitivity of the Classification Tree Model is - ",Sensitivity_ct)
+cat("\n Specificity of the Classification Tree Model is - ",Specificity_ct)
+
+# Positive predictive value and negative predictive value
+PPV_ct <- TP/(TP+FP)
+NPV_ct <- TN/(TN+FN)
+
+cat("\n Positive Predictive Value of the Classification Tree Model is - ",PPV_ct)
+cat("\n Negative Predictive Value of the Classification Tree Model is - ",NPV_ct)
+
+# F1 Score
+precision_ct <- PPV_ct
+recall_ct <- Sensitivity_ct
+F1_ct <- 2 * (precision_ct * recall_ct) / (precision_ct + recall_ct)
+
+cat("\n F1 Score of the Classification Tree Model is - ",F1_ct)
+
+
+```
+Our classification tree model has an overall accuracy of 0.9475563 and an AUC of 0.8679009. The confusion matrix shows that it correctly identified 603 out of 1090 instances of high coverage and 9750 out of 9836 instances of low coverage.
+
+Note that sensitivity is high, indicating that the model correctly identifies most instances of high coverage. However, specificity is relatively low, meaning that the model is not as good at correctly identifying low coverage instances. The positive predictive value is also high, indicating that when the model predicts high coverage, it is usually correct. The negative predictive value is lower, meaning that when the model predicts low coverage, it is not always correct. The F1 score is a weighted average of precision and recall and is a good overall measure of model performance. In your case, the F1 score is 0.9714542, indicating that our model performs well overall.
+
+
+We now select the best model a predicting if a tile has high solar power system coverage from the available numerical
+features data. 
+
+
+To select the best model for predicting if a tile has high solar power system coverage, we need to consider multiple performance metrics and compare them across all the models.
+
+Looking at the performance metrics provided for each model, the Random Forest model has the highest accuracy (0.9494) and the highest AUC (0.9522237), followed by the SVM model with polynomial kernel of degree 3 (accuracy: 0.9389872, AUC: 0.8075785), the Classification Tree model (accuracy: 0.9475563, AUC: 0.8679009), and the LR model (accuracy: 0.9277869, F1-score: 0.9606974).
+
+
+```{r}
+# create a data frame of model names and their accuracy
+model_names <- c("LR", "Random Forest", "SVM Poly", "SVM Sigmoid", "Classification Tree")
+accuracy <- c(0.861, 0.949, 0.939, 0.899, 0.948)
+df <- data.frame(model_names, accuracy)
+
+# create the plot
+library(ggplot2)
+ggplot(df, aes(x=model_names, y=accuracy)) +
+  geom_bar(stat="identity", fill="#619CFF") +
+  ggtitle("Model Accuracy Comparison") +
+  xlab("Model") +
+  ylab("Accuracy") +
+  ylim(0, 1) +
+  geom_text(aes(label=accuracy), vjust=1.5, color="white", size=4)
+
+```
+Based on these metrics, we can conclude that the Random Forest model is the best model for predicting if a tile has high solar power system coverage from the available numerical features data.
+
+
+We now use appropriately some test data in order to evaluate the generalized predictive performance of the best selected
+classifier. 
+
+```{r}
+
+# Split data into training and testing sets
+library(caTools)
+set.seed(22204841)
+split <- sample.split(data$solar_system_coverage, SplitRatio = 0.7)
+train <- subset(data, split == TRUE)
+test <- subset(data, split == FALSE)
+
+```
+
+Fit the Random Forest model
+```{r}
+library(caret)
+library(randomForest)
+rforest <- randomForest(solar_system_coverage ~ ., data = train)
+
+```
+
+Evaluate the model's performance on the test set
+
+```{r}
+
+# Calculate the confusion matrix
+library(caret)
+pred <- predict(rforest, newdata = test, type = "class")
+confusionMatrix(table(pred, test$solar_system_coverage))
+
+# Feature importance plot
+varImpPlot(rforest, sort = TRUE, main = "Variable Importance")
+
+# Calculate accuracy, sensitivity, specificity, and F1-score
+library(ROCR)
+pred_obj <- prediction(as.numeric(pred), test$solar_system_coverage)
+acc <- performance(pred_obj, "acc")
+sens <- performance(pred_obj, "sens")
+spec <- performance(pred_obj, "spec")
+f1 <- performance(pred_obj, "f")
+cat("Accuracy:", round(acc@y.values[[1]], 4), "\n")
+cat("Sensitivity:", round(sens@y.values[[1]], 4), "\n")
+cat("Specificity:", round(spec@y.values[[1]], 4), "\n")
+cat("F1-score:", round(f1@y.values[[1]][which.max(f1@x.values[[1]])], 4), "\n")
+
+library(pROC)
+roc_obj <- roc(test$solar_system_coverage, predict(rforest, newdata = test, type = "prob")[,2])
+auc <- auc(roc_obj)
+
+cat("Area Under Curve-",auc)
+
+
+```
+
+Based on the provided performance metrics, the random forest model appears to have a high accuracy of 0.9494 with a 95% confidence interval of (0.9413, 0.9566). This indicates that the model is able to classify the majority of the observations correctly. Additionally, the model has a high specificity of 0.98983, meaning that it is able to correctly identify the high coverage observations as high coverage with a high degree of accuracy.
+
+However, the sensitivity of the model is relatively low at 0.58410, which means that the model may not be as effective at detecting low coverage observations as low coverage. This is further supported by the prevalence of low coverage observations in the dataset, which is only 0.09976. This means that the model may be biased towards correctly identifying high coverage observations, but may not perform as well for low coverage observations.
+
+The kappa statistic of 0.6706 indicates a moderate level of agreement between the observed and predicted classifications by the model. The F1-score is not provided, possibly due to the imbalance in the dataset. The area under the curve (AUC) of 0.9434748 indicates a good overall performance of the model.
+
+In conclusion, the random forest model appears to be effective at correctly identifying high coverage observations but may not perform as well for low coverage observations. It is important to consider the imbalanced nature of the dataset when interpreting these performance metrics.
+

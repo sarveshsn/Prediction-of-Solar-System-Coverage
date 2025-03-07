@@ -52,6 +52,10 @@ The selected Random Forest model is evaluated using a separate test dataset. Per
 For more details, please refer to the individual sections and R code provided in this repository.
 
 
-## Author 
+## License
+This project is open-source and available under the [MIT License](LICENSE).
 
-- **Sarvesh Sairam Naik**
+---
+
+**Author:** Sarvesh Sairam Naik  
+**GitHub Repository:** [GitHub Link](https://github.com/sarveshsn)
